@@ -1,10 +1,16 @@
-import { useState, useReducer, useCallback, useMemo } from 'react';
+import { useState, useReducer, useCallback, useMemo, useEffect, useRef } from 'react';
 import { STAGES, QUESTIONS } from './data/questions';
 import { findMatches } from './engine/matcher';
-import { initTelemetry, trackEvent } from './telemetry';
+import { initTelemetry, trackEvent, setUserId, clearUserId } from './telemetry';
+import { createClient } from '@supabase/supabase-js';
 import QuestionCard from './components/QuestionCard';
 import ResultsView from './components/ResultsView';
 import WelcomeScreen from './components/WelcomeScreen';
+
+// ── Supabase client ──
+const SUPABASE_URL = 'https://cedfqqfuebfvdfrqkkbz.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNlZGZxcWZ1ZWJmdmRmcnFra2J6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MjE3NTgsImV4cCI6MjA5MDM5Nzc1OH0.tlE3GoJVb2KyaNdgWkvw5fpTCXPJ4iCTxLMhos8JtxE';
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Initialize telemetry
 if (typeof window !== 'undefined') {
@@ -16,6 +22,14 @@ function reducer(state, action) {
   switch (action.type) {
     case 'START':
       return { ...state, phase: 'questionnaire', activePage: 0, startTime: Date.now() };
+    case 'RESUME':
+      return {
+        ...state,
+        phase: 'questionnaire',
+        answers: action.answers || {},
+        activePage: action.activePage || 0,
+        startTime: Date.now(),
+      };
     case 'ANSWER': {
       const newAnswers = { ...state.answers, [action.questionId]: action.value };
       return { ...state, answers: newAnswers };
@@ -56,15 +70,101 @@ const PAGES = STAGES.map(stage => ({
 export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [expandedResult, setExpandedResult] = useState(null);
+  const [user, setUser] = useState(null);
+  const [savedSession, setSavedSession] = useState(null);
+  const [showResumePrompt, setShowResumePrompt] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const saveTimerRef = useRef(null);
 
   const answeredCount = Object.keys(state.answers).length;
 
-  // Get visible questions for a page (respecting skip logic)
+  // ── Auth state management ──
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        setUserId(session.user.id);
+        loadSavedSession(session.user.id);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+        setUserId(session.user.id);
+        trackEvent('login_completed', { provider: 'google' });
+        loadSavedSession(session.user.id);
+      } else {
+        setUser(null);
+        clearUserId();
+        setSavedSession(null);
+        setShowResumePrompt(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── Load saved session ──
+  const loadSavedSession = async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('saved_sessions')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (data && !error) {
+        const answerCount = Object.keys(data.answers || {}).length;
+        if (answerCount > 0) {
+          setSavedSession(data);
+          // Only show resume prompt if user is on the welcome screen
+          if (state.phase === 'welcome') {
+            setShowResumePrompt(true);
+          }
+        }
+      }
+    } catch (e) {
+      // No saved session — that's fine
+    }
+  };
+
+  // ── Auto-save progress (debounced) ──
+  useEffect(() => {
+    if (!user || state.phase === 'welcome' || answeredCount === 0) return;
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      setSaving(true);
+      try {
+        const { error } = await supabase
+          .from('saved_sessions')
+          .upsert({
+            user_id: user.id,
+            answers: state.answers,
+            active_page: state.activePage,
+            results: state.results,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'user_id' });
+
+        if (error) console.error('Save error:', error);
+      } catch (e) {
+        console.error('Save error:', e);
+      }
+      setSaving(false);
+    }, 2000); // Save 2 seconds after last change
+
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [state.answers, state.activePage, state.results, user, state.phase, answeredCount]);
+
+  // ── Get visible questions for a page ──
   const getVisibleQuestions = useCallback((page) => {
     return page.questions.filter(q => !q.skipIf || !q.skipIf(state.answers));
   }, [state.answers]);
 
-  // Count answered questions per page
+  // ── Count answered questions per page ──
   const pageAnswerCounts = useMemo(() => {
     return PAGES.map(page => {
       const visible = page.questions.filter(q => !q.skipIf || !q.skipIf(state.answers));
@@ -73,10 +173,46 @@ export default function App() {
     });
   }, [state.answers]);
 
+  // ── Handlers ──
+  const handleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: 'https://briancronin.ai/car-finder/',
+      },
+    });
+    if (error) {
+      console.error('Login error:', error);
+      trackEvent('login_failed', { error: error.message });
+    }
+  };
+
+  const handleLogout = async () => {
+    trackEvent('logout', {});
+    // Clear saved session state
+    setSavedSession(null);
+    setShowResumePrompt(false);
+    await supabase.auth.signOut();
+    setUser(null);
+    clearUserId();
+  };
+
   const handleStart = useCallback(() => {
     trackEvent('questionnaire_started', {});
+    setShowResumePrompt(false);
     dispatch({ type: 'START' });
   }, []);
+
+  const handleResume = useCallback(() => {
+    if (!savedSession) return;
+    trackEvent('results_loaded', { answeredCount: Object.keys(savedSession.answers || {}).length });
+    setShowResumePrompt(false);
+    dispatch({
+      type: 'RESUME',
+      answers: savedSession.answers,
+      activePage: savedSession.active_page || 0,
+    });
+  }, [savedSession]);
 
   const handleAnswer = useCallback((questionId, value) => {
     dispatch({ type: 'ANSWER', questionId, value });
@@ -97,13 +233,19 @@ export default function App() {
     dispatch({ type: 'SHOW_RESULTS' });
   }, [answeredCount, state.startTime]);
 
-  const handleRestart = useCallback(() => {
+  const handleRestart = useCallback(async () => {
     trackEvent('questionnaire_restarted', {});
     setExpandedResult(null);
+    setShowResumePrompt(false);
+    // Clear saved session from database
+    if (user) {
+      await supabase.from('saved_sessions').delete().eq('user_id', user.id);
+    }
+    setSavedSession(null);
     dispatch({ type: 'RESTART' });
-  }, []);
+  }, [user]);
 
-  // When entering results phase, run the matcher
+  // ── Run matcher when entering results ──
   if (state.phase === 'results' && !state.results) {
     const { results, weights } = findMatches(state.answers);
     dispatch({ type: 'SET_RESULTS', results, weights });
@@ -114,6 +256,7 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* ── Header ── */}
       <header className="app-header">
         <a href="/" className="header-back" aria-label="Back to briancronin.ai">
           ← briancronin.ai
@@ -122,21 +265,70 @@ export default function App() {
           <span className="header-icon">🚗</span>
           Vehicle Purchase Assistant
         </div>
-        {state.phase !== 'welcome' && (
-          <button className="header-restart" onClick={handleRestart}>
-            Start Over
-          </button>
-        )}
+        <div className="header-right">
+          {saving && <span className="save-indicator">Saving...</span>}
+          {user && !saving && answeredCount > 0 && state.phase !== 'welcome' && (
+            <span className="save-indicator saved">✓ Saved</span>
+          )}
+          {state.phase !== 'welcome' && (
+            <button className="header-restart" onClick={handleRestart}>
+              Start Over
+            </button>
+          )}
+          {user ? (
+            <div className="header-user">
+              {user.user_metadata?.avatar_url && (
+                <img src={user.user_metadata.avatar_url} alt="" className="header-avatar" />
+              )}
+              <button className="header-logout" onClick={handleLogout}>Sign out</button>
+            </div>
+          ) : (
+            <button className="header-login" onClick={handleLogin}>
+              <span className="login-g">G</span> Sign in
+            </button>
+          )}
+        </div>
       </header>
 
       <main className="app-main">
-        {state.phase === 'welcome' && (
+        {/* ── Welcome Screen ── */}
+        {state.phase === 'welcome' && !showResumePrompt && (
           <WelcomeScreen onStart={handleStart} />
         )}
 
+        {/* ── Resume Prompt ── */}
+        {state.phase === 'welcome' && showResumePrompt && (
+          <div className="resume-prompt">
+            <div className="resume-card">
+              <span className="resume-icon">👋</span>
+              <h2 className="resume-title">Welcome back{user?.user_metadata?.full_name ? `, ${user.user_metadata.full_name.split(' ')[0]}` : ''}!</h2>
+              <p className="resume-subtitle">
+                You have a saved session with {Object.keys(savedSession?.answers || {}).length} questions answered.
+                {savedSession?.results && ' Your recommendations are ready too.'}
+              </p>
+              <div className="resume-actions">
+                <button className="resume-btn primary" onClick={handleResume}>
+                  Pick Up Where You Left Off →
+                </button>
+                <button className="resume-btn secondary" onClick={handleStart}>
+                  Start Fresh
+                </button>
+              </div>
+            </div>
+            {!user && (
+              <div className="resume-login-hint">
+                <button className="header-login" onClick={handleLogin}>
+                  <span className="login-g">G</span> Sign in to save progress
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Questionnaire ── */}
         {state.phase === 'questionnaire' && (
           <div className="pages-container">
-            {/* ── Tab Navigation ── */}
+            {/* Tab Navigation */}
             <nav className="page-tabs">
               {PAGES.map((page, i) => {
                 const counts = pageAnswerCounts[i];
@@ -162,7 +354,7 @@ export default function App() {
               })}
             </nav>
 
-            {/* ── Page Header ── */}
+            {/* Page Header */}
             <div className="page-header" style={{ '--stage-color': currentPage.color }}>
               <span className="page-header-icon">{currentPage.icon}</span>
               <div>
@@ -173,7 +365,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* ── Questions for this page ── */}
+            {/* Questions */}
             <div className="page-questions">
               {visibleQuestions.length === 0 ? (
                 <div className="page-empty">
@@ -197,7 +389,7 @@ export default function App() {
               )}
             </div>
 
-            {/* ── Page Navigation ── */}
+            {/* Page Navigation */}
             <div className="page-nav">
               <button
                 className="page-nav-btn prev"
@@ -230,9 +422,19 @@ export default function App() {
                 </button>
               )}
             </div>
+
+            {/* Sign-in prompt for anonymous users */}
+            {!user && answeredCount >= 3 && (
+              <div className="save-prompt">
+                <button className="save-prompt-btn" onClick={handleLogin}>
+                  <span className="login-g">G</span> Sign in to save your progress
+                </button>
+              </div>
+            )}
           </div>
         )}
 
+        {/* ── Results ── */}
         {state.phase === 'results' && state.results && (
           <>
             <div className="results-back-bar">

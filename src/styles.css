@@ -1394,3 +1394,186 @@ body {
   .disclosure-header { padding: 20px 20px 0; }
   .disclosure-body { padding: 16px 20px 20px; }
 }
+/* ═══════════════════════════════════════════════
+   AUTH & SAVE/RESUME STYLES
+   Append this to the end of your existing styles.css
+   ═══════════════════════════════════════════════ */
+
+/* ── Header Auth UI ── */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.header-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid #E8E3DC;
+}
+.header-logout {
+  font-family: 'Outfit', sans-serif;
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid #E8E3DC;
+  background: none;
+  color: #9A9488;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.header-logout:hover { border-color: #7A7568; color: #7A7568; }
+
+.header-login {
+  font-family: 'Outfit', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid #E8E3DC;
+  background: #fff;
+  color: #7A7568;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+.header-login:hover { border-color: #1a2332; color: #1a2332; }
+.login-g { font-size: 14px; font-weight: 700; }
+
+/* ── Save Indicator ── */
+.save-indicator {
+  font-family: 'Outfit', sans-serif;
+  font-size: 11px;
+  color: #9A9488;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #F5F0EB;
+  white-space: nowrap;
+}
+.save-indicator.saved {
+  color: #4A8C6F;
+  background: rgba(74, 140, 111, 0.1);
+}
+
+/* ── Resume Prompt ── */
+.resume-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  min-height: 60vh;
+}
+.resume-card {
+  background: #fff;
+  border: 1px solid #E8E3DC;
+  border-radius: 20px;
+  padding: 40px;
+  text-align: center;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(26, 35, 50, 0.06);
+}
+.resume-icon {
+  font-size: 42px;
+  display: block;
+  margin-bottom: 16px;
+}
+.resume-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: 26px;
+  color: #1a2332;
+  margin: 0 0 10px;
+}
+.resume-subtitle {
+  font-family: 'Outfit', sans-serif;
+  font-size: 15px;
+  color: #7A7568;
+  line-height: 1.6;
+  margin: 0 0 28px;
+}
+.resume-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.resume-btn {
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 14px 28px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  width: 100%;
+}
+.resume-btn.primary {
+  background: linear-gradient(135deg, #D4A574, #C49060);
+  border: 2px solid #D4A574;
+  color: #fff;
+}
+.resume-btn.primary:hover {
+  background: linear-gradient(135deg, #C49060, #B5804E);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(212, 165, 116, 0.3);
+}
+.resume-btn.secondary {
+  background: #fff;
+  border: 1.5px solid #E8E3DC;
+  color: #7A7568;
+}
+.resume-btn.secondary:hover {
+  border-color: #1a2332;
+  color: #1a2332;
+}
+.resume-login-hint {
+  margin-top: 20px;
+}
+
+/* ── Save Prompt (nudge to sign in) ── */
+.save-prompt {
+  padding: 10px 24px;
+  background: rgba(212, 165, 116, 0.08);
+  border-top: 1px solid rgba(212, 165, 116, 0.2);
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.save-prompt-btn {
+  font-family: 'Outfit', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 16px;
+  border-radius: 8px;
+  border: 1px solid #D4A574;
+  background: rgba(212, 165, 116, 0.1);
+  color: #C49060;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+.save-prompt-btn:hover {
+  background: rgba(212, 165, 116, 0.2);
+}
+
+/* ── Mobile Responsive (auth) ── */
+@media (max-width: 640px) {
+  .header-right { gap: 4px; }
+  .header-login { padding: 5px 10px; font-size: 11px; }
+  .header-logout { font-size: 10px; padding: 4px 8px; }
+  .save-indicator { font-size: 10px; padding: 3px 8px; }
+  .resume-card { padding: 28px 20px; }
+  .resume-title { font-size: 22px; }
+  .resume-subtitle { font-size: 14px; }
+  .resume-btn { padding: 12px 20px; font-size: 13px; }
+  .save-prompt { padding: 8px 12px; }
+}
