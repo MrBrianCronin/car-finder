@@ -37,7 +37,7 @@ function SingleSelect({ question, value, onChange }) {
         <button
           key={opt.value}
           className={`select-option ${value === opt.value ? 'selected' : ''}`}
-          onClick={() => onChange(opt.value)}
+          onClick={() => onChange(value === opt.value ? undefined : opt.value)}
         >
           {opt.label}
         </button>
@@ -88,7 +88,7 @@ function ScaleInput({ question, value, onChange }) {
           <button
             key={n}
             className={`scale-btn ${value === n ? 'selected' : ''}`}
-            onClick={() => onChange(n)}
+            onClick={() => onChange(value === n ? undefined : n)}
           >
             {n}
           </button>
@@ -134,7 +134,7 @@ function TextInput({ question, value, onChange }) {
       <input
         type="text"
         value={value || ''}
-        onChange={e => onChange(e.target.value)}
+        onChange={e => onChange(e.target.value || undefined)}
         placeholder={question.placeholder || ''}
         maxLength={question.maxLength || 200}
         className="text-field"
@@ -146,13 +146,12 @@ function TextInput({ question, value, onChange }) {
 // ── Brand Selector ──
 function BrandSelector({ question, value, onChange }) {
   const prefs = value || { include: [], exclude: [] };
-  const [mode, setMode] = useState('include'); // include or exclude
+  const [mode, setMode] = useState('include');
 
   const toggleBrand = (brand) => {
     const list = mode === 'include' ? [...(prefs.include || [])] : [...(prefs.exclude || [])];
     const otherList = mode === 'include' ? [...(prefs.exclude || [])] : [...(prefs.include || [])];
 
-    // Remove from other list if present
     const otherIdx = otherList.indexOf(brand);
     if (otherIdx !== -1) otherList.splice(otherIdx, 1);
 
@@ -218,7 +217,7 @@ function BrandSelector({ question, value, onChange }) {
 }
 
 // ── Question Card ──
-export default function QuestionCard({ question, value, onAnswer, onNext, onPrev, canGoBack, isOptional }) {
+export default function QuestionCard({ question, value, onAnswer, onNext, onPrev, canGoBack, isOptional, hideNav }) {
   const [localValue, setLocalValue] = useState(value);
 
   useEffect(() => {
@@ -231,12 +230,6 @@ export default function QuestionCard({ question, value, onAnswer, onNext, onPrev
   };
 
   const canProceed = isOptional || localValue !== undefined;
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && canProceed) {
-      onNext();
-    }
-  };
 
   const renderInput = () => {
     switch (question.type) {
@@ -260,8 +253,7 @@ export default function QuestionCard({ question, value, onAnswer, onNext, onPrev
   };
 
   return (
-    <div className="question-card" onKeyDown={handleKeyDown} tabIndex={0}>
-      <div className="question-number">Question {question.id}</div>
+    <div className="question-card">
       <h2 className="question-text">{question.text}</h2>
       {question.subtext && <p className="question-subtext">{question.subtext}</p>}
 
@@ -269,20 +261,22 @@ export default function QuestionCard({ question, value, onAnswer, onNext, onPrev
         {renderInput()}
       </div>
 
-      <div className="question-nav">
-        {canGoBack && (
-          <button className="nav-btn nav-prev" onClick={onPrev}>
-            ← Back
+      {!hideNav && (
+        <div className="question-nav">
+          {canGoBack && (
+            <button className="nav-btn nav-prev" onClick={onPrev}>
+              ← Back
+            </button>
+          )}
+          <button
+            className={`nav-btn nav-next ${canProceed ? '' : 'disabled'}`}
+            onClick={canProceed ? onNext : undefined}
+            disabled={!canProceed}
+          >
+            {isOptional && !localValue ? 'Skip →' : 'Continue →'}
           </button>
-        )}
-        <button
-          className={`nav-btn nav-next ${canProceed ? '' : 'disabled'}`}
-          onClick={canProceed ? onNext : undefined}
-          disabled={!canProceed}
-        >
-          {isOptional && !localValue ? 'Skip →' : 'Continue →'}
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
